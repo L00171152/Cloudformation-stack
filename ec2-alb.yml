@@ -1,0 +1,198 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: Basic template that defines a single Amazon EC2 instance with a security group that allows SSH traffic on port 22 and HTTP traffic on port 80 on Linux Virtual Machine.
+
+Parameters:
+  ArtifactStore:
+    Type: String
+    Default: final  
+  VpcId: 
+    Description: VPC id 
+    Type: String
+    Default: vpc-0ae6145920ccf1508
+
+  PublicSubnet1:
+    Description: Subnet Id where instance will create 
+    Type: String
+    Default: subnet-06bfb06abd025ab64
+
+  PublicSubnet2:
+    Description: Subnet Id where instance will create 
+    Type: String
+    Default: subnet-0b1ac600a4d182dfa
+
+  PrivateSubnet1:
+    Description: Subnet Id where instance will create 
+    Type: String
+    Default: subnet-045e429c1070cdefd
+  
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: String
+    Default: vj_portfolio
+  
+  JumphostSG:
+    Description: Enter the security group of the Jumphost SecurityGroupIds
+    Type: String
+
+  InstanceType:
+    Description: WebServer EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues: [t2.micro]
+    ConstraintDescription: must be a valid EC2 instance type.
+
+  SSHLocation:
+    Description: The IP address range that can be used to SSH to the EC2 instances
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 0.0.0.0/0
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  LatestAmiId:
+    Type:  'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+
+  Application:
+    Description: Application Name
+    Type: String
+    AllowedPattern: "[A-Za-z0-9]+"
+    Default: new
+  
+  Environment:
+    AllowedValues: [dev,qa,prod]
+    Default: dev
+    Description: The name of the Environment
+    Type: String
+
+Resources:
+
+  AppserverElbSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: {"Fn::ImportValue" : {"Fn::Sub" : "${ArtifactStore}-VPC"}}
+      GroupDescription: ELB Security Group
+      SecurityGroupIngress:
+        - FromPort: 80
+          IpProtocol: tcp
+          CidrIp: 0.0.0.0/0
+          ToPort: 80
+          Description: Allow from internat
+      Tags:
+        - Key: Name
+          Value: !Sub '${Application}-appserver-elb-sg'
+
+  AppServerSG:
+    Type: AWS::EC2::SecurityGroup    
+    Properties:
+      VpcId: {"Fn::ImportValue" : {"Fn::Sub" : "${ArtifactStore}-VPC"}}
+      GroupDescription: Web Server Security Group
+      SecurityGroupIngress:
+        - FromPort: 80
+          IpProtocol: tcp
+          SourceSecurityGroupId: !Ref AppserverElbSG
+          ToPort: 80
+          Description: Allow SSH from bastion subnet 
+        - FromPort: 22
+          IpProtocol: tcp
+          SourceSecurityGroupId: !Ref JumphostSG
+          ToPort: 22
+          Description: Allow SSH from Bastion Subnet                              
+      Tags:
+      - Key: Name
+        Value: !Sub '${Application}-appserver-sg'
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${Application}-${Environment}-alb'
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: 600
+      SecurityGroups: 
+        - !Ref AppserverElbSG
+      Subnets:
+        - {"Fn::ImportValue" : {"Fn::Sub" : "${ArtifactStore}-PublicSubnet1"}}
+        - {"Fn::ImportValue" : {"Fn::Sub" : "${ArtifactStore}-PublicSubnet2"}}
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  ListenerRule1:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref ALBListener
+      Priority: 1
+      Conditions:
+        - Field: http-header
+          HttpHeaderConfig:
+            HttpHeaderName: User-Agent
+            Values:
+              - Mozilla
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckProtocol: HTTP
+      HealthyThresholdCount: 3
+      HealthCheckPath: /index.html
+      Matcher:
+        HttpCode: 200
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 20
+      VpcId: {"Fn::ImportValue" : {"Fn::Sub" : "${ArtifactStore}-VPC"}}
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 3
+      Targets:
+      - Id: !Ref EC2Instance
+        Port: 80
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      SecurityGroupIds: 
+        - !Ref AppServerSG
+      KeyName: !Ref KeyName
+      ImageId: ami-0d75513e7706cf2d9
+      SubnetId: {"Fn::ImportValue" : {"Fn::Sub" : "${ArtifactStore}-PrivateSubnet1"}}
+#     IamInstanceProfile: !Ref ConsoleInstanceProfile
+      UserData:
+        Fn::Base64: !Sub
+        - |
+          #!/bin/bash
+          exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+          # Sleep for the instance role might not be properly attached
+          sleep 10
+          # copy index file from s3 to /var/www/html/
+          aws s3 cp s3://cloudadvisory/index.html /var/www/html/ --region eu-central-1
+          # Install ngnix for testing 
+          sudo apt update -y
+          sudo apt install nginx -y
+          sudo service nginx start
+          sudo service nginx status
+        - {
+          }    
+
+Outputs:
+  AppELBDNS:
+    Description: InstanceId of the newly created EC2 instance
+    Value: !GetAtt [ApplicationLoadBalancer, DNSName]

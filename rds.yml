@@ -1,0 +1,133 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS CloudFormation Template for RDS MySQL'
+
+Parameters:
+  ArtifactStore:
+    Type: String
+    Default: final
+
+  DBName:
+    Default: MyDatabase
+    Description: The database name
+    Type: String
+    MinLength: '1'
+    MaxLength: '64'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric
+      characters.
+
+  DBUser:
+    NoEcho: 'true'
+    Default: cloudapp1
+    Description: The database admin account username
+    Type: String
+    MinLength: '1'
+    MaxLength: '16'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric
+      characters.
+
+  DBPassword:
+    NoEcho: 'true'
+    Description: The database admin account password
+    Type: String
+    MinLength: '1'
+    MaxLength: '41'
+    AllowedPattern: '[a-zA-Z0-9]+'
+    ConstraintDescription: must contain only alphanumeric characters.
+
+  DBAllocatedStorage:
+    Default: '5'
+    Description: The size of the database (Gb)
+    Type: Number
+    MinValue: '5'
+    MaxValue: '1024'
+    ConstraintDescription: must be between 5 and 1024Gb.
+
+  DBInstanceClass:
+    Description: The database instance type
+    Type: String
+    Default: db.t2.small
+    AllowedValues: [ db.t2.micro, db.t2.small, db.t2.medium, db.t2.large]
+    ConstraintDescription: must select a valid database instance type.
+
+  AppServerSG:
+    Description: The EC2 security group that contains instances that need access to
+      the database
+    Default: default
+    Type: String
+    AllowedPattern: '[a-zA-Z0-9\-]+'
+    ConstraintDescription: must be a valid security group name.
+
+  MultiAZ:
+    Description: Multi-AZ master database
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    ConstraintDescription: must be true or false.
+
+  Application:
+    Description: Application Name
+    Type: String
+    AllowedPattern: "[A-Za-z0-9]+"
+    Default: dev
+  
+  Environment:
+    AllowedValues: [dev,qa,prod]
+    Default: dev
+    Description: The name of the Environment
+    Type: String
+
+Resources:
+  # DBSecurityGroup:
+  #   Type: AWS::EC2::SecurityGroup
+  #   Properties:
+  #     VpcId: !Ref VpcId
+  #     GroupDescription: Database Security Group
+  #     SecurityGroupIngress:
+  #       - IpProtocol: tcp
+  #         FromPort: '3306'
+  #         ToPort: '3306'
+  #         SourceSecurityGroupName: !Ref 'AppServerSG'       
+  #     Tags:
+  #     - Key: Name
+  #       Value: !Sub '${Application}-db-sg'
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: DB Subnet Group
+      SubnetIds:
+        - {"Fn::ImportValue" : {"Fn::Sub" : "${ArtifactStore}-DataSubnet1"}}
+        - {"Fn::ImportValue" : {"Fn::Sub" : "${ArtifactStore}-DataSubnet2"}}
+
+  MasterDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub '${Application}-mysql-db-${Environment}'
+      DBName: !Ref 'DBName'
+      AllocatedStorage: !Ref 'DBAllocatedStorage'
+      DBInstanceClass: !Ref 'DBInstanceClass'
+      Engine: MySQL
+      MasterUsername: !Ref 'DBUser'
+      MasterUserPassword: !Ref 'DBPassword'
+      MultiAZ: !Ref 'MultiAZ'
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      Tags:
+      - Key: Name
+        Value: Master Database
+      # VPCSecurityGroups: !Ref DBSecurityGroup
+
+  ReplicaDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      SourceDBInstanceIdentifier: !Ref 'MasterDB'
+      DBInstanceClass: !Ref 'DBInstanceClass'
+      Tags:
+      - Key: Name
+        Value: Read Replica Database
+
+Outputs:
+  MasterJDBCConnectionString:
+    Description: JDBC connection string for the master database
+    Value: !GetAtt [MasterDB, Endpoint.Address]
