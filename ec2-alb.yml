@@ -1,36 +1,20 @@
 AWSTemplateFormatVersion: 2010-09-09
 
-Description: Basic template that defines a single Amazon EC2 instance with a security group that allows SSH traffic on port 22 and HTTP traffic on port 80 on Linux Virtual Machine.
+Description: Basic template that creates application loadbalancer & instance in private subnet to host website
 
 Parameters:
-  ArtifactStore:
+#VPC stack information
+  ArtifactStore:                        
+    Description: Enter the VPC stack name  
     Type: String
-    Default: final  
-  VpcId: 
-    Description: VPC id 
-    Type: String
-    Default: vpc-0ae6145920ccf1508
-
-  PublicSubnet1:
-    Description: Subnet Id where instance will create 
-    Type: String
-    Default: subnet-06bfb06abd025ab64
-
-  PublicSubnet2:
-    Description: Subnet Id where instance will create 
-    Type: String
-    Default: subnet-0b1ac600a4d182dfa
-
-  PrivateSubnet1:
-    Description: Subnet Id where instance will create 
-    Type: String
-    Default: subnet-045e429c1070cdefd
+    Default: final
   
+#Key name for private subnet
   KeyName:
     Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
     Type: String
     Default: vj_portfolio
-  
+ 
   JumphostSG:
     Description: Enter the security group of the Jumphost SecurityGroupIds
     Type: String
@@ -51,10 +35,6 @@ Parameters:
     AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
     ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
 
-  LatestAmiId:
-    Type:  'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
-    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
-
   Application:
     Description: Application Name
     Type: String
@@ -69,6 +49,7 @@ Parameters:
 
 Resources:
 
+#Security group for Application LoadBalancer
   AppserverElbSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -84,6 +65,7 @@ Resources:
         - Key: Name
           Value: !Sub '${Application}-appserver-elb-sg'
 
+#Security group for Webserver Instance 
   AppServerSG:
     Type: AWS::EC2::SecurityGroup    
     Properties:
@@ -104,12 +86,13 @@ Resources:
       - Key: Name
         Value: !Sub '${Application}-appserver-sg'
 
+#Launching Public Application Loadbalancer
   ApplicationLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
       Name: !Sub '${Application}-${Environment}-alb'
       Scheme: internet-facing
-      Type: application
+      Type: application   
       IpAddressType: ipv4
       LoadBalancerAttributes:
         - Key: idle_timeout.timeout_seconds
@@ -179,7 +162,6 @@ Resources:
         Fn::Base64: !Sub
         - |
           #!/bin/bash
-          exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
           # Sleep for the instance role might not be properly attached
           sleep 10
           # copy index file from s3 to /var/www/html/

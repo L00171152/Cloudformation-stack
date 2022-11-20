@@ -1,6 +1,6 @@
 ---
 AWSTemplateFormatVersion: 2010-09-09
-Description: Master stack for creating infra
+Description: Master stack for creating VPC infrastructure and Jumphost
 
 Parameters:
   S3ArtifactStore:
@@ -79,7 +79,6 @@ Resources:
         DataSubnet2CIDR: !Ref DataSubnet2CIDR
 #
 
-
   EC2Instance:
     Type: AWS::EC2::Instance
     Properties:
@@ -98,23 +97,9 @@ Resources:
         Fn::Base64: !Sub
         - |
           #!/bin/bash
-          exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
-          # Sleep for the instance role might not be properly attached
-          sleep 10
           sudo apt update -y
         - {
           }
-#  EC2WaitCondition:
-#    Type: "AWS::CloudFormation::WaitCondition"
-#    DependsOn: "EC2Instance"
-#    Properties: 
-#      Handle: 
-#        Ref: "EC2WaitHandle"
-#      Timeout: "300"
-#      Count: 1
-#  EC2WaitHandle:
-#    Type: "AWS::CloudFormation::WaitConditionHandle"
-#
 
 Outputs:
   InternetGateway:
@@ -154,10 +139,6 @@ Outputs:
     Description: Instance Id
     Value: !Ref 'EC2Instance'
   
-#  InstanceId:
-#    Description: Instance Id
-#    Value: !GetAtt EC2Stack.Outputs.EC2Instance
-
   PrivateSubnet1:
     Description: PrivateSubnet1
     Value: !GetAtt VPCStack.Outputs.PrivateSubnet1
