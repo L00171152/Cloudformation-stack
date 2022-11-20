@@ -25,6 +25,40 @@ Parameters:
     Default: t2.micro
     AllowedValues: [t2.micro]
     ConstraintDescription: must be a valid EC2 instance type.
+  
+  Mappings:
+  
+  RegionMap:
+    us-east-1:
+      AMI: ami-55ef662f
+    us-east-2:
+      AMI: ami-15e9c770
+    us-west-1:
+      AMI: ami-a51f27c5
+    us-west-2:
+      AMI: ami-bf4193c7
+    ca-central-1:
+      AMI: ami-d29e25b6
+    eu-west-1:
+      AMI: ami-0d75513e7706cf2d9
+    eu-west-2:
+      AMI: ami-e7d6c983
+    eu-west-3:
+      AMI: ami-dd8b3ca0
+    eu-central-1:
+      AMI: ami-bf2ba8d0
+    sa-east-1:
+      AMI: ami-286f2a44
+    ap-south-1:
+      AMI: ami-d5c18eba
+    ap-southeast-1:
+      AMI: ami-c63d6aa5
+    ap-southeast-2:
+      AMI: ami-ff4ea59d
+    ap-northeast-1:
+      AMI: ami-da9e2cbc
+    ap-northeast-2:
+      AMI: ami-1196317f
 
   SSHLocation:
     Description: The IP address range that can be used to SSH to the EC2 instances
@@ -155,7 +189,8 @@ Resources:
       SecurityGroupIds: 
         - !Ref AppServerSG
       KeyName: !Ref KeyName
-      ImageId: ami-0d75513e7706cf2d9
+      ImageId: !FindInMap [ RegionMap, !Ref "AWS::Region", AMI]
+#      ImageId: ami-0d75513e7706cf2d9
       SubnetId: {"Fn::ImportValue" : {"Fn::Sub" : "${ArtifactStore}-PrivateSubnet1"}}
 #     IamInstanceProfile: !Ref ConsoleInstanceProfile
       UserData:
@@ -165,7 +200,7 @@ Resources:
           # Sleep for the instance role might not be properly attached
           sleep 10
           # copy index file from s3 to /var/www/html/
-          aws s3 cp s3://cloudadvisory/index.html /var/www/html/ --region eu-central-1
+          #aws s3 cp s3://cloudadvisory/index.html /var/www/html/ --region eu-central-1
           # Install ngnix for testing 
           sudo apt update -y
           sudo apt install nginx -y

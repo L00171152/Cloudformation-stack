@@ -10,6 +10,8 @@ Parameters:
     Description: "Enter the IP"
     Type: String
     Default: 172.17.0.0/20
+
+  
     
   SSHLocation:
     Description: The IP address range that can be used to SSH to the EC2 instances

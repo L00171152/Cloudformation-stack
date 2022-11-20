@@ -30,6 +30,7 @@ Parameters:
     Type: String
 
 Mappings:
+  
   RegionMap:
     us-east-1:
       AMI: ami-55ef662f
@@ -85,11 +86,8 @@ Resources:
       InstanceInitiatedShutdownBehavior: 'terminate'
       InstanceType: 't2.micro'
       KeyName: !Ref 'KPair'
-#      ImageId: !FindInMap
-#        - RegionMap
-#        - !Ref 'AWS::Region'
-#         - AMI
-      ImageId: ami-0d75513e7706cf2d9
+      ImageId: !FindInMap [ RegionMap, !Ref "AWS::Region", AMI]
+#      ImageId: ami-0d75513e7706cf2d9
       SecurityGroupIds: 
         - !GetAtt 'VPCStack.Outputs.PublicSG'
       SubnetId: !GetAtt 'VPCStack.Outputs.PublicSubnet1'
